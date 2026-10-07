@@ -192,6 +192,7 @@ protected:
     int m_cur_times = 0;
 
     std::set<slot_index> m_force_skipped;
+    std::set<slot_index> m_recycled_this_round; // 本轮已回收过的栏位，用于轮换，避免死磕同一栏
 
     // Do not report tags from these slot. Already reported, or we can not make sure whether it has been reported.
     // e.g. those that were already empty (*Recruit Now*) when we open the recruit page, because

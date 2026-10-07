@@ -248,6 +248,12 @@ bool asst::AutoRecruitTask::_run()
     bool try_use_expedited = m_use_expedited;
 
     while (m_cur_times < m_max_times) {
+        // 四个栏位都轮过一遍了，开始新一轮
+        if (m_recycled_this_round.size() >= 4) {
+            Log.info("all four slots recycled this round, start a new round");
+            m_recycled_this_round.clear();
+        }
+
         // 本轮刚确认的这一单的保底星级，0 表示本轮没有确认任何招募
         int expedite_level = 0;
 
@@ -347,9 +353,17 @@ std::optional<asst::Rect> asst::AutoRecruitTask::try_get_start_button(const cv::
     if (result.empty()) {
         return std::nullopt;
     }
-    auto iter = std::ranges::find_if(result, [&](const TextRect& r) -> bool {
+    auto usable = [&](const TextRect& r) -> bool {
         return !m_force_skipped.contains(slot_index_from_rect(r.rect));
+    };
+    // 优先挑本轮还没回收过的栏位，让 1/2/3/4 轮流刷，不在同一栏上反复停/招
+    auto iter = std::ranges::find_if(result, [&](const TextRect& r) -> bool {
+        return usable(r) && !m_recycled_this_round.contains(slot_index_from_rect(r.rect));
     });
+    if (iter == result.cend()) {
+        // 四个都刷过了，退回任意可用栏位
+        iter = std::ranges::find_if(result, usable);
+    }
     if (iter == result.cend()) {
         return std::nullopt;
     }
@@ -432,6 +446,7 @@ asst::AutoRecruitTask::recruit_result asst::AutoRecruitTask::recruit_one(const R
     // 低星回收：招募已经开始，立刻点「停止招募」清掉，换个新标签继续洗
     if (m_recycle_below_level > 0 && m_last_recruit_level > 0 && m_last_recruit_level < m_recycle_below_level) {
         Log.info("recycle low level recruitment, level", m_last_recruit_level, "<", m_recycle_below_level);
+        m_recycled_this_round.emplace(slot_index_from_rect(button));
         if (!recycle_recruitment()) {
             Log.info("Failed to stop the recruitment, this slot will finish on its own.");
         }
