@@ -150,6 +150,18 @@ asst::AutoRecruitTask& asst::AutoRecruitTask::set_use_expedited(bool use_or_not)
     return *this;
 }
 
+asst::AutoRecruitTask& asst::AutoRecruitTask::set_expedite_min_level(int level) noexcept
+{
+    m_expedite_min_level = level;
+    return *this;
+}
+
+asst::AutoRecruitTask& asst::AutoRecruitTask::set_recycle_below_level(int level) noexcept
+{
+    m_recycle_below_level = level;
+    return *this;
+}
+
 asst::AutoRecruitTask& asst::AutoRecruitTask::set_select_extra_tags(ExtraTagsMode select_extra_tags_mode) noexcept
 {
     m_select_extra_tags_mode = select_extra_tags_mode;
@@ -236,6 +248,9 @@ bool asst::AutoRecruitTask::_run()
     bool try_use_expedited = m_use_expedited;
 
     while (m_cur_times < m_max_times) {
+        // 本轮刚确认的这一单的保底星级，0 表示本轮没有确认任何招募
+        int expedite_level = 0;
+
         auto start_rect = try_get_start_button(ctrler()->get_image());
         if (start_rect) {
             if (need_exit()) {
@@ -250,12 +265,18 @@ bool asst::AutoRecruitTask::_run()
             // failed:    recognition error / no permit / etc., bump m_slot_fail for retry limiting
             if (result == recruit_result::confirmed) {
                 ++m_cur_times;
+                expedite_level = m_last_recruit_level;
             }
             else if (result == recruit_result::failed) {
                 ++m_slot_fail;
             }
             if (!m_has_permit && (!m_force_refresh || !m_has_refresh)) {
                 return true;
+            }
+            if (result == recruit_result::recycled) {
+                // 低星已经点「停止招募」清掉了，栏位空出来，直接开下一轮继续洗标签
+                ++m_cur_times;
+                continue;
             }
         }
         else {
@@ -269,6 +290,15 @@ bool asst::AutoRecruitTask::_run()
         }
 
         if (try_use_expedited) {
+            if (expedite_level < m_expedite_min_level) {
+                // 本轮招募没达到加急门槛：不消耗加急许可。
+                // 还有空位就继续下一轮；没有空位说明剩下的只能靠时间自然完成，直接收工。
+                if (!try_get_start_button(ctrler()->get_image()).has_value()) {
+                    Log.info("Nothing worth expediting, stop. level", expedite_level, "<", m_expedite_min_level);
+                    return true;
+                }
+                continue;
+            }
             if (need_exit()) {
                 return false;
             }
@@ -338,6 +368,8 @@ asst::AutoRecruitTask::recruit_result asst::AutoRecruitTask::recruit_one(const R
 {
     LogTraceFunction;
 
+    m_last_recruit_level = 0;
+
     int delay = Config.get_options().task_delay;
 
     ctrler()->click(button);
@@ -395,6 +427,15 @@ asst::AutoRecruitTask::recruit_result asst::AutoRecruitTask::recruit_one(const R
         Log.info("Failed to confirm current recruit config.");
         click_return_button();
         return recruit_result::failed;
+    }
+
+    // 低星回收：招募已经开始，立刻点「停止招募」清掉，换个新标签继续洗
+    if (m_recycle_below_level > 0 && m_last_recruit_level > 0 && m_last_recruit_level < m_recycle_below_level) {
+        Log.info("recycle low level recruitment, level", m_last_recruit_level, "<", m_recycle_below_level);
+        if (!recycle_recruitment()) {
+            Log.info("Failed to stop the recruitment, this slot will finish on its own.");
+        }
+        return recruit_result::recycled;
     }
 
     return recruit_result::confirmed;
@@ -576,6 +617,7 @@ asst::AutoRecruitTask::calc_task_result_type asst::AutoRecruitTask::recruit_calc
         }
 
         const auto& final_combination = result_vec.front();
+        m_last_recruit_level = final_combination.min_level;
 
         {
             json::object results_json;
@@ -853,6 +895,13 @@ bool asst::AutoRecruitTask::recruit_now()
 {
     ProcessTask task(*this, { "RecruitNow" });
     return task.run();
+}
+
+bool asst::AutoRecruitTask::recycle_recruitment()
+{
+    // 刚确认的招募此刻处于展开状态，直接点「停止招募」把它清掉
+    LogTraceFunction;
+    return ProcessTask(*this, { "RecruitStop" }).run();
 }
 
 bool asst::AutoRecruitTask::confirm()

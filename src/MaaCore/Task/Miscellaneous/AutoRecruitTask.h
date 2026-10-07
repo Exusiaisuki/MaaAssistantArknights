@@ -26,6 +26,8 @@ public:
     AutoRecruitTask& set_need_refresh(bool need_refresh) noexcept;
     AutoRecruitTask& set_max_times(int max_times) noexcept;
     AutoRecruitTask& set_use_expedited(bool use_or_not) noexcept;
+    AutoRecruitTask& set_expedite_min_level(int level) noexcept;
+    AutoRecruitTask& set_recycle_below_level(int level) noexcept;
     AutoRecruitTask& set_select_extra_tags(ExtraTagsMode select_extra_tags_mode) noexcept;
     AutoRecruitTask& set_first_tags(std::vector<std::string> first_tags) noexcept;
     AutoRecruitTask& set_preserve_tags(std::vector<RecruitConfig::TagId> skip_tags) noexcept;
@@ -50,7 +52,8 @@ protected:
     {
         confirmed,
         skipped,
-        failed
+        failed,
+        recycled // 已开始招募但立刻点「停止招募」清掉，用来换一批新标签
     };
 
     std::optional<Rect> try_get_start_button(const cv::Mat&);
@@ -59,6 +62,7 @@ protected:
     bool recruit_begin();
     bool check_timer(int);
     bool recruit_now();
+    bool recycle_recruitment();
     bool confirm();
     bool refresh();
     // 检查是否有已完成且未领取的招募，有则领取，无则返回true
@@ -171,6 +175,9 @@ protected:
     int m_level3_recruitment_permit_reserve = 0;
     bool m_need_refresh = false;
     bool m_use_expedited = false; // 是否使用加急许可
+    int m_expedite_min_level = 0; // 使用加急许可的最低保底星级，0 表示不限
+    int m_last_recruit_level = 0; // 最近一次识别出的公招组合保底星级
+    int m_recycle_below_level = 0; // 低于该保底星级的招募会「开始后立刻停止」换标签，0 表示关闭
     ExtraTagsMode m_select_extra_tags_mode = ExtraTagsMode::NoExtra;
     std::vector<std::string> m_first_tags;
     std::vector<RecruitConfig::TagId> m_preserve_tags = { "支援机械" };

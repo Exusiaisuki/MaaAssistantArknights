@@ -51,6 +51,12 @@ bool asst::RecruitTask::set_params(const json::value& params)
     int level3_recruitment_permit_reserve = params.get("level3_recruitment_permit_reserve", 0);
     int times = params.get("times", 0);
     bool expedite = params.get("expedite", false);
+    // 加急许可门槛：只有识别出的 tag 组合保底星级 >= 该值时才消耗加急许可。
+    // 0 表示不限星级（官方原始行为）。GUI 不发送该参数，故 GUI 走 default 值。
+    int expedite_level = params.get("expedite_level", 4);
+    // 低星回收：保底星级低于该值的招募，会「先开始再点停止招募」清掉以换新标签。
+    // 0 表示关闭（官方原始行为）。GUI 不发送该参数，故 GUI 走 default 值。
+    int recycle_below_level = params.get("recycle_below_level", 4);
     [[maybe_unused]] int expedite_times = params.get("expedite_times", 0);
     std::vector<RecruitConfig::TagId> preserve_tags;
     std::vector<std::string> first_tags = params.get("first_tags", std::vector<std::string>(0));
@@ -84,6 +90,8 @@ bool asst::RecruitTask::set_params(const json::value& params)
     m_auto_recruit_task_ptr->set_max_times(times)
         .set_need_refresh(refresh)
         .set_use_expedited(expedite)
+        .set_expedite_min_level(expedite_level)
+        .set_recycle_below_level(recycle_below_level)
         .set_select_extra_tags(extra_tags_mode)
         .set_first_tags(first_tags)
         .set_preserve_tags(std::move(preserve_tags))
